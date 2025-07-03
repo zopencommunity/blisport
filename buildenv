@@ -1,6 +1,6 @@
 # Update bump details accordingly. Use bump check to confirm.
 # bump: blis-version /BLIS_VERSION="(.*)"/ https://github.com/flame/blis.git|semver:*
-BLIS_VERSION="1.1" # Specify a stable release
+BLIS_VERSION="2.0" # Specify a stable release
 export ZOPEN_STABLE_TAG="${BLIS_VERSION}"
 
 ###
