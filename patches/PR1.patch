@@ -1,0 +1,138 @@
+diff --git a/build/gen-make-frags/gen-make-frag.sh b/build/gen-make-frags/gen-make-frag.sh
+index e411fa8..d100e0b 100755
+--- a/build/gen-make-frags/gen-make-frag.sh
++++ b/build/gen-make-frags/gen-make-frag.sh
+@@ -1,4 +1,4 @@
+-#!/bin/sh
++#!/bin/env bash
+ #
+ #  BLIS    
+ #  An object-based framework for developing high-performance BLAS-like
+diff --git a/common.mk b/common.mk
+index c43578f..63d8b0c 100644
+--- a/common.mk
++++ b/common.mk
+@@ -834,7 +834,7 @@ endif
+ # --- Language flags ---
+ 
+ # Enable C99.
+-CLANGFLAGS := -std=c99
++CLANGFLAGS := -std=gnu99
+ $(foreach c, $(CONFIG_LIST_FAM), $(eval $(call append-var-for,CLANGFLAGS,$(c))))
+ 
+ # Enable C++11, or C++17 if HPX threading is enabled.
+diff --git a/configure b/configure
+index 6e1c112..521bfbb 100755
+--- a/configure
++++ b/configure
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env bash
++set -x
+ #
+ #  BLIS
+ #  An object-based framework for developing high-performance BLAS-like
+@@ -1252,8 +1253,9 @@ auto_detect()
+ 	cmd="${cc} \
+ 	      -DBLIS_CONFIGURETIME_CPUID \
+ 	      ${c_hdr_paths} \
+-	      -std=c99 -D_GNU_SOURCE \
+-	      ${cflags}"
++	      -std=gnu99 -D_GNU_SOURCE \
++	      ${cflags} \
++	      ${CFLAGS}"
+ 
+ 	# Special case for RISC-V, whose architecture can be detected with
+ 	# preprocessor macros alone. This avoids having to run RISC-V binaries
+@@ -1340,7 +1342,7 @@ has_pragma_omp_simd()
+ 
+ 	# Attempt to compile a simple main() program that contains a
+ 	# #pragma omp simd.
+-	"${found_cc}" -std=c99 -O3 -march=native -fopenmp-simd \
++	"${found_cc}" -std=gnu99 -O3 -march=native -fopenmp-simd \
+ 	            -o "${binname}" "${main_c_filepath}" 2> /dev/null
+ 
+ 	# Depending on the return code from the compile step above, we set
+@@ -3074,12 +3076,12 @@ main()
+ 	# -- Find an archive indexer -----------------------------------------------
+ 
+ 	# Acquire the default archive indexer search order.
+-	ranlib_search_list=$(get_ranlib_search_list)
++	#ranlib_search_list=$(get_ranlib_search_list)
+ 
+ 	# Select an archive indexer from the default list, or from RANLIB if it
+ 	# refers to a valid binary.
+-	select_tool_w_env "${ranlib_search_list}" "${RANLIB}" "RANLIB" \
+-	                  "archive indexer" "yes" found_ranlib
++	#select_tool_w_env "${ranlib_search_list}" "${RANLIB}" "RANLIB" \
++	#                  "archive indexer" "yes" found_ranlib
+ 
+ 
+ 	# -- Read the configuration registry ---------------------------------------
+diff --git a/frame/include/bli_lang_defs.h b/frame/include/bli_lang_defs.h
+index 5eb69a7..77e8730 100644
+--- a/frame/include/bli_lang_defs.h
++++ b/frame/include/bli_lang_defs.h
+@@ -73,10 +73,11 @@
+ // doesn't support __thread, as __GNUC__ is not quite unique to GCC.
+ // But the possibility of someone using such non-main-stream compiler
+ // for building BLIS is low.
+-#if defined(BLIS_ENABLE_TLS) && ( defined(__GNUC__)  || \
+-                                  defined(__clang__) || \
+-                                  defined(__ICC)     || \
+-                                  defined(__IBMC__) )
++#if !defined(__MVS__) && defined(BLIS_ENABLE_TLS) \
++                      && ( defined(__GNUC__)  || \
++                         defined(__clang__) || \
++                         defined(__ICC)     || \
++                         defined(__IBMC__) )
+   #define BLIS_THREAD_LOCAL __thread
+ #else
+   #define BLIS_THREAD_LOCAL
+diff --git a/frame/include/bli_system.h b/frame/include/bli_system.h
+index 7933301..2413167 100644
+--- a/frame/include/bli_system.h
++++ b/frame/include/bli_system.h
+@@ -91,6 +91,8 @@
+     #define BLIS_OS_BSD 1
+   #elif defined(EMSCRIPTEN)
+     #define BLIS_OS_EMSCRIPTEN
++  #elif defined(__MVS__)
++    #define BLIS_OS_ZOS 1
+   #else
+     #error "Cannot determine operating system"
+   #endif
+diff --git a/frame/thread/bli_pthread.c b/frame/thread/bli_pthread.c
+index b840e2b..1078016 100644
+--- a/frame/thread/bli_pthread.c
++++ b/frame/thread/bli_pthread.c
+@@ -594,7 +594,7 @@ int bli_pthread_barrier_wait
+ 	return 0;
+ }
+ 
+-#elif defined(__APPLE__) || defined(_MSC_VER) // !defined(BLIS_DISABLE_SYSTEM)
++#elif defined(__APPLE__) || defined(_MSC_VER) || defined(__MVS__) // !defined(BLIS_DISABLE_SYSTEM)
+ 
+ #include <errno.h>
+ 
+@@ -659,7 +659,7 @@ int bli_pthread_barrier_wait
+ 	}
+ }
+ 
+-#else // !defined(BLIS_DISABLE_SYSTEM) && !defined(__APPLE__) && !defined(_MSC_VER)
++#else // !defined(BLIS_DISABLE_SYSTEM) && !defined(__APPLE__) && !defined(_MSC_VER) && !defined(__MVS__)
+ 
+ // Linux environments implement the pthread_barrier* sub-API. So, if we're
+ // on Linux, we can simply call those functions, just as we did before for
+diff --git a/frame/thread/bli_pthread.h b/frame/thread/bli_pthread.h
+index dcf0db2..0b77092 100644
+--- a/frame/thread/bli_pthread.h
++++ b/frame/thread/bli_pthread.h
+@@ -115,7 +115,7 @@ typedef pthread_cond_t      bli_pthread_cond_t;
+ typedef pthread_condattr_t  bli_pthread_condattr_t;
+ typedef pthread_once_t      bli_pthread_once_t;
+ 
+-#if defined(__APPLE__)
++#if defined(__APPLE__) || defined(__MVS__)
+ 
+ // For OS X, we must define the barrier types ourselves since Apple does
+ // not implement barriers in their variant of pthreads.
