@@ -2,6 +2,8 @@
 # bump: blis-version /BLIS_VERSION="(.*)"/ https://github.com/flame/blis.git|semver:*
 BLIS_VERSION="1.1" # Specify a stable release
 export ZOPEN_STABLE_TAG="${BLIS_VERSION}"
+export RANLIB="echo"
+export ENABLE_VERBOSE=yes
 
 ###
 ### Build control file for the blis port
@@ -52,15 +54,25 @@ export ZOPEN_SYSTEM_PREREQ=""
 
 zopen_check_results()
 {
-  dir="$1"
-  pfx="$2"
-  chk="$1/$2_check.log"
+  chk="../blis/output.testsuite"
+
+  successes=$(grep -E "PASS$" "${chk}" | wc -l | xargs)
+
+  failureTests=$(grep -E "FAILURE$" "${chk}")
+
+  failures=$(echo "${failureTests}" | wc -l | xargs)
+
+  totalTests=$((failures+successes))
+
+  echo "${failureTests}" > "$1/$2_check_failures.log"
 
   # Echo the following information to gauge build health
-  echo "actualFailures:0"
-  echo "totalTests:1"
-  echo "expectedFailures:0"
-  echo "expectedTotalTests:1"
+cat <<ZZ
+actualFailures:$failures
+totalTests:$totalTests
+expectedFailures:16
+ZZ
+
 }
 
 zopen_get_version()
@@ -153,7 +165,7 @@ export ZOPEN_CHECK_OPTS="check LDLIBS=\"\${LIBS}\"" ## Options to pass to check 
 #export ZOPEN_CHECK_TIMEOUT="" ## Timeout limit in seconds for the check program (defaults to '12600' # 3.5 hours)
 #export ZOPEN_CLEAN_OPTS="" ## Options to pass to clean up  program (defaults to 'clean')
 export ZOPEN_CONFIGURE_MINIMAL="yes" ## Configuration program will not be passed CFLAGS, LDFLAGS, CPPFLAGS options but will get them from env vars.
-export ZOPEN_CONFIGURE_OPTS="--disable-shared --prefix=\$ZOPEN_INSTALL_DIR CFLAGS=\"\$CFLAGS \$CPPFLAGS\" generic" ## Options to pass to configuration program (defaults to '--prefix=')
+export ZOPEN_CONFIGURE_OPTS="--disable-shared --prefix=\$ZOPEN_INSTALL_DIR CFLAGS=\"\$CFLAGS \$CPPFLAGS\" RANLIB=\"echo\" generic" ## Options to pass to configuration program (defaults to '--prefix=')
 #export ZOPEN_EXTRA_CONFIGURE_OPTS="auto" ## Extra configure options to pass to configuration program. (defaults to '')
 #export ZOPEN_INSTALL_OPTS="" ## Options to pass to installation program (defaults to 'install')
 #export ZOPEN_MAKE_MINIMAL="" ## Build program will not be passed CFLAGS, LDFLAGS, CPPFLAGS options but will get them from env vars.

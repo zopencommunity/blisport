@@ -1,3 +1,35 @@
+diff --git a/Makefile b/Makefile
+index 813554f..708b279 100644
+--- a/Makefile
++++ b/Makefile
+@@ -867,10 +867,10 @@ endif
+ 
+ $(BASE_OBJ_BLASTEST_PATH)/%.x: $(BASE_OBJ_BLASTEST_PATH)/%.o $(BLASTEST_F2C_LIB) $(LIBBLIS_LINK)
+ ifeq ($(ENABLE_VERBOSE),yes)
+-	$(LINKER) $< $(BLASTEST_F2C_LIB) $(LIBBLIS_LINK) $(LDFLAGS) -o $@
++	$(LINKER) $< $(BLASTEST_F2C_LIB) $(LIBBLIS_LINK) $(LDFLAGS) $(LDLIBS) -o $@
+ else
+ 	@echo "Linking $@ against '$(notdir $(BLASTEST_F2C_LIB)) $(LIBBLIS_LINK) "$(LDFLAGS)"'"
+-	@$(LINKER) $< $(BLASTEST_F2C_LIB) $(LIBBLIS_LINK) $(LDFLAGS) -o $@
++	@$(LINKER) $< $(BLASTEST_F2C_LIB) $(LIBBLIS_LINK) $(LDFLAGS) $(LDLIBS) -o $@
+ endif
+ 
+ # A rule to run ?blat1.x driver files.
+@@ -938,10 +938,11 @@ endif
+ # Testsuite binary rule.
+ $(TESTSUITE_BIN): $(MK_TESTSUITE_OBJS) $(LIBBLIS_LINK)
+ ifeq ($(ENABLE_VERBOSE),yes)
+-	$(LINKER) $(MK_TESTSUITE_OBJS) $(LIBBLIS_LINK) $(LDFLAGS) -o $@
++	@echo "Linking $@ against '$(LIBBLIS_LINK) "$(LDFLAGS)" "$(LDLIBS)" '"
++	$(LINKER) $(MK_TESTSUITE_OBJS) $(LIBBLIS_LINK) $(LDFLAGS) $(LDLIBS) -o $@
+ else
+-	@echo "Linking $@ against '$(LIBBLIS_LINK) "$(LDFLAGS)"'"
+-	@$(LINKER) $(MK_TESTSUITE_OBJS) $(LIBBLIS_LINK) $(LDFLAGS) -o $@
++	@echo "Linking $@ against '$(LIBBLIS_LINK) "$(LDFLAGS)" "$(LDLIBS)"'"
++	@$(LINKER) $(MK_TESTSUITE_OBJS) $(LIBBLIS_LINK) $(LDFLAGS) $(LDLIBS) -o $@
+ endif
+ 
+ # A rule to run the testsuite using the normal input.* files.
 diff --git a/build/gen-make-frags/gen-make-frag.sh b/build/gen-make-frags/gen-make-frag.sh
 index e411fa8..d100e0b 100755
 --- a/build/gen-make-frags/gen-make-frag.sh
@@ -22,16 +54,10 @@ index c43578f..63d8b0c 100644
  
  # Enable C++11, or C++17 if HPX threading is enabled.
 diff --git a/configure b/configure
-index 6e1c112..521bfbb 100755
+index 6e1c112..1b0ce89 100755
 --- a/configure
 +++ b/configure
-@@ -1,4 +1,5 @@
- #!/usr/bin/env bash
-+set -x
- #
- #  BLIS
- #  An object-based framework for developing high-performance BLAS-like
-@@ -1252,8 +1253,9 @@ auto_detect()
+@@ -1252,8 +1252,9 @@ auto_detect()
  	cmd="${cc} \
  	      -DBLIS_CONFIGURETIME_CPUID \
  	      ${c_hdr_paths} \
@@ -43,7 +69,7 @@ index 6e1c112..521bfbb 100755
  
  	# Special case for RISC-V, whose architecture can be detected with
  	# preprocessor macros alone. This avoids having to run RISC-V binaries
-@@ -1340,7 +1342,7 @@ has_pragma_omp_simd()
+@@ -1340,7 +1341,7 @@ has_pragma_omp_simd()
  
  	# Attempt to compile a simple main() program that contains a
  	# #pragma omp simd.
@@ -52,22 +78,6 @@ index 6e1c112..521bfbb 100755
  	            -o "${binname}" "${main_c_filepath}" 2> /dev/null
  
  	# Depending on the return code from the compile step above, we set
-@@ -3074,12 +3076,12 @@ main()
- 	# -- Find an archive indexer -----------------------------------------------
- 
- 	# Acquire the default archive indexer search order.
--	ranlib_search_list=$(get_ranlib_search_list)
-+	#ranlib_search_list=$(get_ranlib_search_list)
- 
- 	# Select an archive indexer from the default list, or from RANLIB if it
- 	# refers to a valid binary.
--	select_tool_w_env "${ranlib_search_list}" "${RANLIB}" "RANLIB" \
--	                  "archive indexer" "yes" found_ranlib
-+	#select_tool_w_env "${ranlib_search_list}" "${RANLIB}" "RANLIB" \
-+	#                  "archive indexer" "yes" found_ranlib
- 
- 
- 	# -- Read the configuration registry ---------------------------------------
 diff --git a/frame/include/bli_lang_defs.h b/frame/include/bli_lang_defs.h
 index 5eb69a7..77e8730 100644
 --- a/frame/include/bli_lang_defs.h
@@ -136,3 +146,20 @@ index dcf0db2..0b77092 100644
  
  // For OS X, we must define the barrier types ourselves since Apple does
  // not implement barriers in their variant of pthreads.
+diff --git a/testsuite/Makefile b/testsuite/Makefile
+index 57c1c74..4415ed3 100644
+--- a/testsuite/Makefile
++++ b/testsuite/Makefile
+@@ -151,10 +151,10 @@ endif
+ 
+ $(TESTSUITE_BIN): $(TEST_OBJS) $(LIBBLIS_LINK)
+ ifeq ($(ENABLE_VERBOSE),yes)
+-	$(LINKER) $(TEST_OBJS) $(LIBBLIS_LINK) $(LDFLAGS) -o $@
++	$(LINKER) $(TEST_OBJS) $(LIBBLIS_LINK) $(LDFLAGS) $(LDLIBS) -o -lzoslib -lzoslib-supp $@
+ else
+ 	@echo "Linking $@ against '$(LIBBLIS_LINK) $(LDFLAGS)'"
+-	@$(LINKER) $(TEST_OBJS) $(LIBBLIS_LINK) $(LDFLAGS) -o $@
++	@$(LINKER) $(TEST_OBJS) $(LIBBLIS_LINK) $(LDFLAGS) $(LDLIBS) -o -lzoslib -lzoslib-supp $@
+ endif
+ 
+ 
