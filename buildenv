@@ -94,41 +94,46 @@ zopen_get_version()
 zopen_post_install() {
   mkdir -p "${ZOPEN_INSTALL_DIR}/lib/pkgconfig"
 
-  # Resolved now, while zoslib is a build dependency and on the search path.
-  _blis_zoslib_libs=$(pkg-config --libs zoslib 2> /dev/null)
-  if [ -z "${_blis_zoslib_libs}" ]; then
-    printSoftError "zoslib not found via pkg-config; blis.pc will omit its link flags"
-  fi
-
-  # Written by Python rather than a heredoc. check_python is a dependency of
-  # this port and exports _TAG_REDIR_OUT=txt, which tags shell redirections --
-  # so "heredoc to a file, then iconv it" converts content that the redirection
-  # already converted, and the result is doubly encoded and unreadable. Writing
-  # the bytes explicitly does not depend on how redirections are tagged.
-  python3 - "${ZOPEN_INSTALL_DIR}" "${BLIS_VERSION}" "${_blis_zoslib_libs}" <<'PCEOF'
-import os, sys
-install_dir, version, zoslib_libs = sys.argv[1], sys.argv[2], sys.argv[3]
+  # Every path here is relative to the .pc file's own location, and the file
+  # therefore contains no absolute install prefix. That matters for more than
+  # tidiness: zopen-build rewrites any installed file that mentions the install
+  # prefix, and that rewrite is "sed ... > file". check_python is a dependency
+  # of this port and exports _TAG_REDIR_OUT=txt, which tags redirections, so the
+  # rewrite re-encodes the file and leaves it readable by nothing -- Build 181
+  # and 182 both shipped a blis.pc that pkg-config rejected with
+  # "has no Name: field". Keeping the prefix out of the file sidesteps the
+  # rewrite entirely, and makes the package properly relocatable besides.
+  #
+  # Written by Python rather than a heredoc for the same underlying reason:
+  # redirection tagging would otherwise decide the file's encoding.
+  python3 - "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc" "${BLIS_VERSION}" <<'PCEOF'
+import sys
+out, version = sys.argv[1], sys.argv[2]
 text = (
-    "prefix=%s\n"
+    "prefix=${pcfiledir}/../..\n"
     "libdir=${prefix}/lib\n"
     "includedir=${prefix}/include\n"
+    # zoslib sits alongside this port under the same zopen root.
+    "zoslibdir=${pcfiledir}/../../../../zoslib/zoslib/lib\n"
     "\n"
     "Name: BLIS\n"
     "Description: BLAS-like Library Instantiation Software Framework\n"
     "Version: %s\n"
-    "Libs: -L${libdir} -lblis %s\n"
+    # libblis.a is static and references zoslib, so every consumer needs these.
+    # They are in Libs rather than behind Requires.private: naming zoslib would
+    # also drag in its C-specific Cflags, which a Fortran consumer's compiler
+    # rejects (-isystem, -include <header>.h).
+    "Libs: -L${libdir} -lblis -L${zoslibdir} -lzoslib ${zoslibdir}/celquopt.s.o -lzoslib-supp\n"
     "Cflags: -I${includedir}\n"
-) % (install_dir, version, zoslib_libs)
-path = os.path.join(install_dir, "lib", "pkgconfig", "blis.pc")
-with open(path, "wb") as fh:
+) % (version,)
+with open(out, "wb") as fh:
     fh.write(text.encode("iso8859-1"))
 PCEOF
-  [ -s "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc" ] \
-    || printError "could not write blis.pc"
+  [ -s "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc" ] || printError "could not write blis.pc"
   chtag -b "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc"
 
-  # Prove it is actually parseable rather than assuming: a mis-encoded file is
-  # still a file, and the failure would only surface in a consumer's build.
+  # Assert it parses. A mis-encoded file is still a file, and the failure would
+  # otherwise surface only in a consumer's build.
   PKG_CONFIG_PATH="${ZOPEN_INSTALL_DIR}/lib/pkgconfig" pkg-config --exists blis \
     || printError "the generated blis.pc is not readable by pkg-config"
 }
