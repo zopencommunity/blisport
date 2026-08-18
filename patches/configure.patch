@@ -1,0 +1,21 @@
+diff --git a/configure b/configure
+index 3cc67ff..fb44bf8 100755
+--- a/configure
++++ b/configure
+@@ -1611,6 +1611,16 @@ get_compiler_version()
+ 		cc_vendor="aocc"
+ 	fi
+ 
++	# IBM's clang for z/OS reports, since version 3.0,
++	#   "IBM C/C++ for Open Enterprise Languages on z/OS 3.0.0, clang version 21.1.1"
++	# Because the vendor match above takes the first hit, "IBM" wins over
++	# "clang" and configurations that accept clang reject it. Earlier releases
++	# omitted the leading "IBM" and were detected correctly, so this only
++	# appears when upgrading the compiler. It is clang; treat it as clang.
++	if [[ ${cc_vendor} = IBM && ${vendor_string} = *clang* ]]; then
++		cc_vendor="clang"
++	fi
++
+ 	# Detect armclang, which doesn't have a nice, unambiguous, one-word tag
+ 	if [[ ${vendor_string} = *'Arm C/C++/Fortran Compiler'* ]]; then
+ 		cc_vendor="armclang"
