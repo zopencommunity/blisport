@@ -82,6 +82,42 @@ zopen_get_version()
 ### Optional user-supplied functions for zopen-build
 ###
 
+# BLIS installs no pkg-config file, so anything that locates BLAS the standard
+# way -- meson's dependency('blis') among them, which is how scipy finds it --
+# cannot see it. Generate one at install time.
+#
+# The zoslib link flags go in Libs rather than behind "Requires.private: zoslib"
+# for two reasons. libblis.a is a static archive, so every consumer needs them,
+# not just static links. And naming zoslib as a requirement drags in its Cflags
+# too, which are C-specific: a Fortran consumer then gets -isystem and
+# -include <header>.h passed to a compiler that rejects both.
+zopen_post_install() {
+  mkdir -p "${ZOPEN_INSTALL_DIR}/lib/pkgconfig"
+
+  # Resolved now, while zoslib is a build dependency and on the search path.
+  _blis_zoslib_libs=$(pkg-config --libs zoslib 2> /dev/null)
+  if [ -z "${_blis_zoslib_libs}" ]; then
+    printSoftError "zoslib not found via pkg-config; blis.pc will omit its link flags"
+  fi
+
+  cat > "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc.ebcdic" <<ZZ
+prefix=${ZOPEN_INSTALL_DIR}
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: BLIS
+Description: BLAS-like Library Instantiation Software Framework
+Version: ${BLIS_VERSION}
+Libs: -L\${libdir} -lblis ${_blis_zoslib_libs}
+Cflags: -I\${includedir}
+ZZ
+  iconv -f IBM-1047 -t ISO8859-1 \
+    "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc.ebcdic" \
+    > "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc"
+  rm -f "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc.ebcdic"
+  chtag -b "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc"
+}
+
 zopen_append_to_env() {
 cat <<ZZ
 if [ ! -z "\$ZOPEN_IN_ZOPEN_BUILD" ]; then
