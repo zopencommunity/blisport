@@ -26,10 +26,6 @@ export ZOPEN_DEV_DEPS=""  # Specify the dev build dependencies
 
 ## Specify a space-delimited list of applicable categories.
 ## See tool_categories.txt for valid options
-# TEMPORARY: the check suite is ~2772 tests and dominates the build time.
-# Skipped while the pkg-config work settles. REVERT before this port is done.
-export ZOPEN_CHECK="skip"
-
 export ZOPEN_CATEGORIES="ai library math"
 
 ## Runtime zopen tool dependencies to be installed alongside the tool.
