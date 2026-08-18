@@ -18,7 +18,7 @@ export ZOPEN_BUILD_LINE="STABLE"
 
 ## Required IF ZOPEN_BUILD_LINE='STABLE'
 export ZOPEN_STABLE_URL="https://github.com/flame/blis.git"  # Specify the stable build URL (either git or tarball)
-export ZOPEN_STABLE_DEPS="make check_python grep perl bash coreutils" # Specify the stable build dependencies.
+export ZOPEN_STABLE_DEPS="make check_python grep perl bash coreutils pkgconfig" # Specify the stable build dependencies.
 
 ## Required IF ZOPEN_BUILD_LINE='DEV'
 export ZOPEN_DEV_URL=""   # Specify the dev build URL
@@ -91,51 +91,38 @@ zopen_get_version()
 # not just static links. And naming zoslib as a requirement drags in its Cflags
 # too, which are C-specific: a Fortran consumer then gets -isystem and
 # -include <header>.h passed to a compiler that rejects both.
+# BLIS already installs its own blis.pc into share/pkgconfig, but its Libs line
+# stops at -lblis. libblis.a is static and references zoslib, so every consumer
+# gets __zoslib_malloc/__zoslib_free/__pthread_create_extended UNRESOLVED at
+# bind time -- which is what meson's dependency('blis') produces for scipy.
+# Augment the file that is already there rather than adding a second one on
+# PKG_CONFIG_PATH.
+#
+# The tagging either side of sed is deliberate. The file is ASCII; sed is an
+# EBCDIC program, so it reads through the tag and writes EBCDIC. Declaring each
+# encoding truthfully at each step is what keeps the result readable -- an
+# earlier attempt to generate this file from a heredoc produced bytes that were
+# neither ASCII nor EBCDIC, because the buildenv is itself ASCII-tagged and the
+# content was converted on the way in and again on the way out.
 zopen_post_install() {
-  mkdir -p "${ZOPEN_INSTALL_DIR}/lib/pkgconfig"
+  _blis_pc="${ZOPEN_INSTALL_DIR}/share/pkgconfig/blis.pc"
+  if [ ! -f "${_blis_pc}" ]; then
+    _blis_pc="${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc"
+  fi
+  [ -f "${_blis_pc}" ] || printError "BLIS installed no blis.pc to augment"
 
-  # Every path here is relative to the .pc file's own location, and the file
-  # therefore contains no absolute install prefix. That matters for more than
-  # tidiness: zopen-build rewrites any installed file that mentions the install
-  # prefix, and that rewrite is "sed ... > file". check_python is a dependency
-  # of this port and exports _TAG_REDIR_OUT=txt, which tags redirections, so the
-  # rewrite re-encodes the file and leaves it readable by nothing -- Build 181
-  # and 182 both shipped a blis.pc that pkg-config rejected with
-  # "has no Name: field". Keeping the prefix out of the file sidesteps the
-  # rewrite entirely, and makes the package properly relocatable besides.
-  #
-  # Written by Python rather than a heredoc for the same underlying reason:
-  # redirection tagging would otherwise decide the file's encoding.
-  python3 - "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc" "${BLIS_VERSION}" <<'PCEOF'
-import sys
-out, version = sys.argv[1], sys.argv[2]
-text = (
-    "prefix=${pcfiledir}/../..\n"
-    "libdir=${prefix}/lib\n"
-    "includedir=${prefix}/include\n"
-    # zoslib sits alongside this port under the same zopen root.
-    "zoslibdir=${pcfiledir}/../../../../zoslib/zoslib/lib\n"
-    "\n"
-    "Name: BLIS\n"
-    "Description: BLAS-like Library Instantiation Software Framework\n"
-    "Version: %s\n"
-    # libblis.a is static and references zoslib, so every consumer needs these.
-    # They are in Libs rather than behind Requires.private: naming zoslib would
-    # also drag in its C-specific Cflags, which a Fortran consumer's compiler
-    # rejects (-isystem, -include <header>.h).
-    "Libs: -L${libdir} -lblis -L${zoslibdir} -lzoslib ${zoslibdir}/celquopt.s.o -lzoslib-supp\n"
-    "Cflags: -I${includedir}\n"
-) % (version,)
-with open(out, "wb") as fh:
-    fh.write(text.encode("iso8859-1"))
-PCEOF
-  [ -s "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc" ] || printError "could not write blis.pc"
-  chtag -b "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc"
+  _blis_zl="ZOPEN_INSTALL_PREFIX/zoslib/zoslib/lib"
+  chtag -tc ISO8859-1 "${_blis_pc}"
+  sed "s|^Libs: .*|& -L${_blis_zl} -lzoslib ${_blis_zl}/celquopt.s.o -lzoslib-supp|" \
+    "${_blis_pc}" > "${_blis_pc}.new" || printError "could not augment blis.pc"
+  mv "${_blis_pc}.new" "${_blis_pc}"
+  chtag -tc IBM-1047 "${_blis_pc}"
 
-  # Assert it parses. A mis-encoded file is still a file, and the failure would
+  # Assert it parses. A mis-encoded .pc is still a file, and the failure would
   # otherwise surface only in a consumer's build.
-  PKG_CONFIG_PATH="${ZOPEN_INSTALL_DIR}/lib/pkgconfig" pkg-config --exists blis \
-    || printError "the generated blis.pc is not readable by pkg-config"
+  PKG_CONFIG_PATH="$(dirname "${_blis_pc}")" pkg-config --exists blis \
+    || printError "blis.pc is not readable by pkg-config after augmenting it"
+  printInfo "- blis.pc: $(PKG_CONFIG_PATH="$(dirname "${_blis_pc}")" pkg-config --libs blis)"
 }
 
 zopen_append_to_env() {
