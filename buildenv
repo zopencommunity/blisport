@@ -100,22 +100,37 @@ zopen_post_install() {
     printSoftError "zoslib not found via pkg-config; blis.pc will omit its link flags"
   fi
 
-  cat > "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc.ebcdic" <<ZZ
-prefix=${ZOPEN_INSTALL_DIR}
-libdir=\${prefix}/lib
-includedir=\${prefix}/include
-
-Name: BLIS
-Description: BLAS-like Library Instantiation Software Framework
-Version: ${BLIS_VERSION}
-Libs: -L\${libdir} -lblis ${_blis_zoslib_libs}
-Cflags: -I\${includedir}
-ZZ
-  iconv -f IBM-1047 -t ISO8859-1 \
-    "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc.ebcdic" \
-    > "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc"
-  rm -f "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc.ebcdic"
+  # Written by Python rather than a heredoc. check_python is a dependency of
+  # this port and exports _TAG_REDIR_OUT=txt, which tags shell redirections --
+  # so "heredoc to a file, then iconv it" converts content that the redirection
+  # already converted, and the result is doubly encoded and unreadable. Writing
+  # the bytes explicitly does not depend on how redirections are tagged.
+  python3 - "${ZOPEN_INSTALL_DIR}" "${BLIS_VERSION}" "${_blis_zoslib_libs}" <<'PCEOF'
+import os, sys
+install_dir, version, zoslib_libs = sys.argv[1], sys.argv[2], sys.argv[3]
+text = (
+    "prefix=%s\n"
+    "libdir=${prefix}/lib\n"
+    "includedir=${prefix}/include\n"
+    "\n"
+    "Name: BLIS\n"
+    "Description: BLAS-like Library Instantiation Software Framework\n"
+    "Version: %s\n"
+    "Libs: -L${libdir} -lblis %s\n"
+    "Cflags: -I${includedir}\n"
+) % (install_dir, version, zoslib_libs)
+path = os.path.join(install_dir, "lib", "pkgconfig", "blis.pc")
+with open(path, "wb") as fh:
+    fh.write(text.encode("iso8859-1"))
+PCEOF
+  [ -s "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc" ] \
+    || printError "could not write blis.pc"
   chtag -b "${ZOPEN_INSTALL_DIR}/lib/pkgconfig/blis.pc"
+
+  # Prove it is actually parseable rather than assuming: a mis-encoded file is
+  # still a file, and the failure would only surface in a consumer's build.
+  PKG_CONFIG_PATH="${ZOPEN_INSTALL_DIR}/lib/pkgconfig" pkg-config --exists blis \
+    || printError "the generated blis.pc is not readable by pkg-config"
 }
 
 zopen_append_to_env() {
