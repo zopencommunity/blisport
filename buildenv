@@ -123,7 +123,12 @@ zopen_post_install() {
 
   python3 -c 'import sys
 pc, zl = sys.argv[1], sys.argv[2]
-extra = " -L%s -lzoslib %s/celquopt.s.o -lzoslib-supp" % (zl, zl)
+# The side deck, not -lzoslib. On z/OS a DLL is linked through its side deck;
+# -lzoslib resolves to libzoslib.so, and naming a .so directly produces a module
+# with no CELQSTRT CSECT -- it links without complaint and then fails to load:
+#   ImportError: CEE3595S DLL ... does not contain a CELQSTRT CSECT
+# Python itself is linked the same way here, via libpython<ver>.x.
+extra = " -L%s %s/libzoslib.x %s/celquopt.s.o -lzoslib-supp" % (zl, zl, zl)
 lines = open(pc, "rb").read().split(b"\n")
 out = [l + extra.encode("iso8859-1") if l.startswith(b"Libs:") else l for l in lines]
 open(pc, "wb").write(b"\n".join(out))
