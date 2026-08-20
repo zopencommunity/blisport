@@ -123,12 +123,18 @@ zopen_post_install() {
 
   python3 -c 'import sys
 pc, zl = sys.argv[1], sys.argv[2]
-# The side deck, not -lzoslib. On z/OS a DLL is linked through its side deck;
-# -lzoslib resolves to libzoslib.so, and naming a .so directly produces a module
-# with no CELQSTRT CSECT -- it links without complaint and then fails to load:
+# The static archive, named explicitly.
+#
+# Not -lzoslib: that resolves to libzoslib.so, and naming a .so directly on
+# z/OS produces a module with no CELQSTRT CSECT -- it links without complaint
+# and then fails to load:
 #   ImportError: CEE3595S DLL ... does not contain a CELQSTRT CSECT
-# Python itself is linked the same way here, via libpython<ver>.x.
-extra = " -L%s %s/libzoslib.x %s/celquopt.s.o -lzoslib-supp" % (zl, zl, zl)
+#
+# Not the side deck either, though that does work: linking zoslib dynamically
+# leaves every consumer needing libzoslib.so on LIBPATH at run time, and static
+# is what this ecosystem does -- curl, openssl, ncurses and libssh2 all ship an
+# archive and no shared object. zoslib is the outlier for shipping both.
+extra = " -L%s %s/libzoslib.a %s/celquopt.s.o -lzoslib-supp" % (zl, zl, zl)
 lines = open(pc, "rb").read().split(b"\n")
 out = [l + extra.encode("iso8859-1") if l.startswith(b"Libs:") else l for l in lines]
 open(pc, "wb").write(b"\n".join(out))
